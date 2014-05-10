@@ -6,7 +6,7 @@ package tql
   BNF:
   select <property> [, <property> ...] | *]
     [from <from>]
-    [where <condition> [and <condition> ...]]
+    [where <condition> [and <condition> ...]] [limit <num> offset <num> | limit <num>, <num>]
 
   <condition> := <property> {< | <= | > | >= | = | != | in} <value>
 */
@@ -20,14 +20,16 @@ import (
 var tokenize_regex = `(?:"[^"\n\r]*")+|(?:'[^'\n\r]*')+|<=|>=|!=|=|<|>|,|\*|-?\d+(?:\.\d+)?|\w+(?:\.\w+)*|(?:"[^"\s]+")+|\(|\)|\S+`
 
 type Tql struct {
-	tokens []string
-	query  string
-	pos    int
-	props  []string
-	from   string
-	conds  []Cond
-    limit  int64
-    offset int64
+	tokens  []string
+	query   string
+	pos     int
+	props   []string
+	from    string
+	conds   []Cond
+	limit   int64
+	offset  int64
+	orderBy string // TODO
+	order   int // TODO
 }
 
 const (
@@ -38,7 +40,7 @@ const (
 	ValBool
 	ValNull
 	ValReference
-    ValList
+	ValList
 )
 
 type Val struct {
@@ -56,8 +58,9 @@ func NewTql(query string) *Tql {
 	t := new(Tql)
 	t.pos = 0
 	t.query = strings.ToLower(query)
-    t.limit = -1
-    t.offset = -1
+	t.limit = -1
+	t.offset = -1
+    t.order = -1
 	if re, err := regexp.Compile(tokenize_regex); err != nil {
 		return nil
 	} else {
@@ -100,6 +103,7 @@ func (t *Tql) __ConsumeRegexp(regex string) (bool, string) {
 
 // consume a identifier an return
 var identifier_regex = `(\w+(?:\.\w+)*)$`
+
 func (t *Tql) __Identifier() (bool, string) {
 	if b, ident := t.__ConsumeRegexp(identifier_regex); b {
 		return true, ident
@@ -141,47 +145,49 @@ func (t *Tql) __Where() bool {
 	if t.__Consume("where") {
 		return t.__ParseFilterList()
 	}
-    return t.__Limit()
+	return t.__Limit()
 }
 
 var num_regex = `(\d+)$`
+
 func (t *Tql) __Limit() bool {
-    if t.__Consume("limit") {
-        _, limit := t.__ConsumeRegexp(num_regex)
-        n, err := strconv.ParseInt(limit, 10, 64)
-        if err != nil {
-            return false
-        }
-        if t.__Consume(",") {
-            t.offset = n
-            _, limit := t.__ConsumeRegexp(num_regex)
-            n, err = strconv.ParseInt(limit, 10, 64)
-            if err != nil {
-                return false
-            }
-        }
-        t.limit = n
-    }
-    return t.__Offset()
+	if t.__Consume("limit") {
+		_, limit := t.__ConsumeRegexp(num_regex)
+		n, err := strconv.ParseInt(limit, 10, 64)
+		if err != nil {
+			return false
+		}
+		if t.__Consume(",") {
+			t.offset = n
+			_, limit := t.__ConsumeRegexp(num_regex)
+			n, err = strconv.ParseInt(limit, 10, 64)
+			if err != nil {
+				return false
+			}
+		}
+		t.limit = n
+	}
+	return t.__Offset()
 }
 
 func (t *Tql) __Offset() bool {
-    if t.__Consume("offset") {
-        b, offset := t.__ConsumeRegexp(num_regex)
-        if !b {
-            return false
-        }
-        n, err := strconv.ParseInt(offset, 10, 64)
-        if err != nil {
-            return false
-        }
-        t.offset = n
-        return true
-    }
-    return true
+	if t.__Consume("offset") {
+		b, offset := t.__ConsumeRegexp(num_regex)
+		if !b {
+			return false
+		}
+		n, err := strconv.ParseInt(offset, 10, 64)
+		if err != nil {
+			return false
+		}
+		t.offset = n
+		return true
+	}
+	return true
 }
 
 var quoted_string_regex = `((?:\'[^\'\n\r]*\')+)|((?:"[^"\n\r]*")+)`
+
 func (t *Tql) __Value() (bool, Val) {
 	if t.pos < len(t.tokens) {
 		token := t.tokens[t.pos]
@@ -200,11 +206,11 @@ func (t *Tql) __Value() (bool, Val) {
 		// try quote string
 		b, val := t.__ConsumeRegexp(quoted_string_regex)
 		if b {
-            if t.tokens[t.pos-1][0] == '\'' {
-                val = strings.Replace(val, "''", "'", -1)
-            } else {
-                val = strings.Replace(val, `""`, `"`, -1)
-            }
+			if t.tokens[t.pos-1][0] == '\'' {
+				val = strings.Replace(val, "''", "'", -1)
+			} else {
+				val = strings.Replace(val, `""`, `"`, -1)
+			}
 			return true, Val{ValQuoteString, val}
 		}
 		// try bool
@@ -226,23 +232,24 @@ func (t *Tql) __Value() (bool, Val) {
 }
 
 func (t *Tql) __ValueList() (bool, Val) {
-    var vals []Val
-    t.__Expect("(")
-    for {
-        if b, val := t.__Value(); b {
-            vals = append(vals, val)
-        } else {
-            return false, Val{}
-        }
-        if !t.__Consume(",") {
-            break
-        }
-    }
-    t.__Expect(")")
-    return true, Val{ValList, vals}
+	var vals []Val
+	t.__Expect("(")
+	for {
+		if b, val := t.__Value(); b {
+			vals = append(vals, val)
+		} else {
+			return false, Val{}
+		}
+		if !t.__Consume(",") {
+			break
+		}
+	}
+	t.__Expect(")")
+	return true, Val{ValList, vals}
 }
 
 var condition_regex = `(<=|>=|!=|=|<|>|in)$`
+
 func (t *Tql) __ParseFilterList() bool {
 	b, ident := t.__Identifier()
 	if !b {
@@ -254,11 +261,11 @@ func (t *Tql) __ParseFilterList() bool {
 	}
 	b, val := t.__Value()
 	if !b && op == "in" {
-        b, val = t.__ValueList()
+		b, val = t.__ValueList()
 	}
-    if !b {
-        return b
-    }
+	if !b {
+		return b
+	}
 	t.conds = append(t.conds, Cond{ident, op, val})
 	if t.__Consume("and") {
 		return t.__ParseFilterList()
