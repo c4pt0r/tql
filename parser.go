@@ -26,6 +26,8 @@ type Tql struct {
 	props  []string
 	from   string
 	conds  []Cond
+    limit  int64
+    offset int64
 }
 
 const (
@@ -54,6 +56,8 @@ func NewTql(query string) *Tql {
 	t := new(Tql)
 	t.pos = 0
 	t.query = strings.ToLower(query)
+    t.limit = -1
+    t.offset = -1
 	if re, err := regexp.Compile(tokenize_regex); err != nil {
 		return nil
 	} else {
@@ -137,7 +141,44 @@ func (t *Tql) __Where() bool {
 	if t.__Consume("where") {
 		return t.__ParseFilterList()
 	}
-	return false
+    return t.__Limit()
+}
+
+var num_regex = `(\d+)$`
+func (t *Tql) __Limit() bool {
+    if t.__Consume("limit") {
+        _, limit := t.__ConsumeRegexp(num_regex)
+        n, err := strconv.ParseInt(limit, 10, 64)
+        if err != nil {
+            return false
+        }
+        if t.__Consume(",") {
+            t.offset = n
+            _, limit := t.__ConsumeRegexp(num_regex)
+            n, err = strconv.ParseInt(limit, 10, 64)
+            if err != nil {
+                return false
+            }
+        }
+        t.limit = n
+    }
+    return t.__Offset()
+}
+
+func (t *Tql) __Offset() bool {
+    if t.__Consume("offset") {
+        b, offset := t.__ConsumeRegexp(num_regex)
+        if !b {
+            return false
+        }
+        n, err := strconv.ParseInt(offset, 10, 64)
+        if err != nil {
+            return false
+        }
+        t.offset = n
+        return true
+    }
+    return true
 }
 
 var quoted_string_regex = `((?:\'[^\'\n\r]*\')+)|((?:"[^"\n\r]*")+)`
@@ -222,5 +263,5 @@ func (t *Tql) __ParseFilterList() bool {
 	if t.__Consume("and") {
 		return t.__ParseFilterList()
 	}
-	return true
+	return t.__Limit()
 }

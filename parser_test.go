@@ -25,9 +25,9 @@ func TestParseSelect(t *testing.T) {
 }
 
 
-func TestParseWhere(t *testing.T) {
+func TestParse(t *testing.T) {
     log.Println("parsing select")
-    tql := NewTql(`select a,b,c,d,e from hello where a > 100 and b < 10 and c = "He""ll''o World" and d in (1,2,3,4,5)`)
+    tql := NewTql(`select a,b,c,d,e from hello where a > 100 and b < 10 and c = "He""ll''o World" and d in (1,2,3,4,5) limit 1 offset 10`)
     if tql != nil {
         for _, token := range tql.tokens {
             log.Println(token)
@@ -35,5 +35,8 @@ func TestParseWhere(t *testing.T) {
         for _, cond := range tql.conds {
             log.Println(cond)
         }
+
+        log.Println("limit", tql.limit)
+        log.Println("offset", tql.offset)
     }
 }
