@@ -123,7 +123,6 @@ func (t *Tql) __Select() bool {
 	if !t.__Consume("*") {
 		t.props = append(t.props, t.__ExpectIdentifier())
 		for t.__Consume(",") {
-			// TODO add prop
 			t.props = append(t.props, t.__ExpectIdentifier())
 		}
 	} else {
@@ -145,7 +144,7 @@ func (t *Tql) __Where() bool {
 	if t.__Consume("where") {
 		return t.__ParseFilterList()
 	}
-	return t.__Limit()
+	return t.__orderBy()
 }
 
 var num_regex = `(\d+)$`
@@ -248,6 +247,22 @@ func (t *Tql) __ValueList() (bool, Val) {
 	return true, Val{ValList, vals}
 }
 
+func (t *Tql) __orderBy() bool {
+    if t.__Consume("order") {
+        if t.__Consume("by") {
+            t.orderBy = t.__ExpectIdentifier()
+            if t.__Consume("asc") {
+                t.order = 1
+            } else if t.__Consume("desc") {
+                t.order = -1
+            }
+        } else {
+            panic("parsing order error")
+        }
+    }
+    return t.__Limit()
+}
+
 var condition_regex = `(<=|>=|!=|=|<|>|in)$`
 
 func (t *Tql) __ParseFilterList() bool {
@@ -270,5 +285,5 @@ func (t *Tql) __ParseFilterList() bool {
 	if t.__Consume("and") {
 		return t.__ParseFilterList()
 	}
-	return t.__Limit()
+	return t.__orderBy()
 }
