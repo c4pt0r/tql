@@ -3,10 +3,12 @@ package tql
 /*
   Tql, Simple SQL-Like query language
 
-  DNF:
+  BNF:
   select <property> [, <property> ...] | *]
     [from <from>]
     [where <condition> [and <condition> ...]]
+
+  <condition> := <property> {< | <= | > | >= | = | != | in} <value>
 */
 
 import (
@@ -15,7 +17,7 @@ import (
 	"strings"
 )
 
-var tokenize_regex = `(?:'[^'\n\r]*')+|<=|>=|!=|=|<|>|,|\*|-?\d+(?:\.\d+)?|\w+(?:\.\w+)*|(?:"[^"\s]+")+|\(|\)|\S+`
+var tokenize_regex = `(?:"[^"\n\r]*")+|(?:'[^'\n\r]*')+|<=|>=|!=|=|<|>|,|\*|-?\d+(?:\.\d+)?|\w+(?:\.\w+)*|(?:"[^"\s]+")+|\(|\)|\S+`
 
 type Tql struct {
 	tokens []string
@@ -34,6 +36,7 @@ const (
 	ValBool
 	ValNull
 	ValReference
+    ValList
 )
 
 type Val struct {
@@ -93,7 +96,6 @@ func (t *Tql) __ConsumeRegexp(regex string) (bool, string) {
 
 // consume a identifier an return
 var identifier_regex = `(\w+(?:\.\w+)*)$`
-
 func (t *Tql) __Identifier() (bool, string) {
 	if b, ident := t.__ConsumeRegexp(identifier_regex); b {
 		return true, ident
@@ -138,8 +140,7 @@ func (t *Tql) __Where() bool {
 	return false
 }
 
-var quoted_string_regex = `((?:\'[^\'\n\r]*\')+)`
-
+var quoted_string_regex = `((?:\'[^\'\n\r]*\')+)|((?:"[^"\n\r]*")+)`
 func (t *Tql) __Value() (bool, Val) {
 	if t.pos < len(t.tokens) {
 		token := t.tokens[t.pos]
@@ -158,6 +159,11 @@ func (t *Tql) __Value() (bool, Val) {
 		// try quote string
 		b, val := t.__ConsumeRegexp(quoted_string_regex)
 		if b {
+            if t.tokens[t.pos-1][0] == '\'' {
+                val = strings.Replace(val, "''", "'", -1)
+            } else {
+                val = strings.Replace(val, `""`, `"`, -1)
+            }
 			return true, Val{ValQuoteString, val}
 		}
 		// try bool
@@ -178,8 +184,24 @@ func (t *Tql) __Value() (bool, Val) {
 	return false, Val{}
 }
 
-var condition_regex = `(<=|>=|!=|=|<|>)$`
+func (t *Tql) __ValueList() (bool, Val) {
+    var vals []Val
+    t.__Expect("(")
+    for {
+        if b, val := t.__Value(); b {
+            vals = append(vals, val)
+        } else {
+            return false, Val{}
+        }
+        if !t.__Consume(",") {
+            break
+        }
+    }
+    t.__Expect(")")
+    return true, Val{ValList, vals}
+}
 
+var condition_regex = `(<=|>=|!=|=|<|>|in)$`
 func (t *Tql) __ParseFilterList() bool {
 	b, ident := t.__Identifier()
 	if !b {
@@ -190,9 +212,12 @@ func (t *Tql) __ParseFilterList() bool {
 		return b
 	}
 	b, val := t.__Value()
-	if !b {
-		return b
+	if !b && op == "in" {
+        b, val = t.__ValueList()
 	}
+    if !b {
+        return b
+    }
 	t.conds = append(t.conds, Cond{ident, op, val})
 	if t.__Consume("and") {
 		return t.__ParseFilterList()

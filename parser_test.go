@@ -27,8 +27,11 @@ func TestParseSelect(t *testing.T) {
 
 func TestParseWhere(t *testing.T) {
     log.Println("parsing select")
-    tql := NewTql("select a,b,c,d,e from hello where a > 100 and b < 10 and c = 'Hello World'")
+    tql := NewTql(`select a,b,c,d,e from hello where a > 100 and b < 10 and c = "He""ll''o World" and d in (1,2,3,4,5)`)
     if tql != nil {
+        for _, token := range tql.tokens {
+            log.Println(token)
+        }
         for _, cond := range tql.conds {
             log.Println(cond)
         }
