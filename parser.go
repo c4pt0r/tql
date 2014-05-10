@@ -6,7 +6,9 @@ package tql
   BNF:
   select <property> [, <property> ...] | *]
     [from <from>]
-    [where <condition> [and <condition> ...]] [limit <num> offset <num> | limit <num>, <num>]
+    [where <condition> [and <condition> ...]]
+    [order by <property> [asc|desc]]
+    [limit <num> offset <num> | limit <num>, <num>]
 
   <condition> := <property> {< | <= | > | >= | = | != | in} <value>
 */
@@ -28,8 +30,8 @@ type Tql struct {
 	conds   []Cond
 	limit   int64
 	offset  int64
-	orderBy string // TODO
-	order   int // TODO
+	orderBy string
+	order   int
 }
 
 const (
