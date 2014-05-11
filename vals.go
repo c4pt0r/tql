@@ -55,7 +55,8 @@ func (v Val) EQ(v1 interface{}) (bool, error) {
 }
 
 func (v Val) NOTEQ(v1 interface{}) (bool, error) {
-    return true, nil
+    b, err := v.EQ(v1)
+    return !b, err
 }
 
 func (v Val) LTE(v1 interface{}) (bool, error) {
