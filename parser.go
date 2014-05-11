@@ -62,7 +62,7 @@ func NewTql(query string) *Tql {
 	t.query = strings.ToLower(query)
 	t.limit = -1
 	t.offset = -1
-    t.order = -1
+	t.order = -1
 	if re, err := regexp.Compile(tokenize_regex); err != nil {
 		return nil
 	} else {
@@ -250,19 +250,19 @@ func (t *Tql) __ValueList() (bool, Val) {
 }
 
 func (t *Tql) __orderBy() bool {
-    if t.__Consume("order") {
-        if t.__Consume("by") {
-            t.orderBy = t.__ExpectIdentifier()
-            if t.__Consume("asc") {
-                t.order = 1
-            } else if t.__Consume("desc") {
-                t.order = -1
-            }
-        } else {
-            panic("parsing order error")
-        }
-    }
-    return t.__Limit()
+	if t.__Consume("order") {
+		if t.__Consume("by") {
+			t.orderBy = t.__ExpectIdentifier()
+			if t.__Consume("asc") {
+				t.order = 1
+			} else if t.__Consume("desc") {
+				t.order = -1
+			}
+		} else {
+			panic("parsing order error")
+		}
+	}
+	return t.__Limit()
 }
 
 var condition_regex = `(<=|>=|!=|=|<|>|in)$`
