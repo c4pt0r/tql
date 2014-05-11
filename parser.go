@@ -11,12 +11,15 @@ package tql
     [limit <num> offset <num> | limit <num>, <num>]
 
   <condition> := <property> {< | <= | > | >= | = | != | in} <value>
+
+  Author: c4pt0r(dongxu)  <huang@wandoujia.com>
 */
 
 import (
 	"regexp"
 	"strconv"
 	"strings"
+    "errors"
 )
 
 var tokenize_regex = `(?:"[^"\n\r]*")+|(?:'[^'\n\r]*')+|<=|>=|!=|=|<|>|,|\*|-?\d+(?:\.\d+)?|\w+(?:\.\w+)*|(?:"[^"\s]+")+|\(|\)|\S+`
@@ -25,44 +28,62 @@ type Tql struct {
 	tokens  []string
 	query   string
 	pos     int
-	props   []string
-	from    string
-	conds   []Cond
-	limit   int64
-	offset  int64
-	orderBy string
-	order   int
+    // export
+	Props   []string
+	From    string
+	Conds   []Cond
+	Limit   int64
+	Offset  int64
+	OrderBy string
+	Order   int
 }
-
-const (
-	ValString = iota
-	ValInt
-	ValFloat
-	ValQuoteString
-	ValBool
-	ValNull
-	ValReference
-	ValList
-)
-
-type Val struct {
-	valType int
-	val     interface{}
-}
+var ErrNotImplement = errors.New("feature not implement yet")
 
 type Cond struct {
-	identifier string
-	op         string
-	val        Val
+	Identifier string
+	Op         string
+	Value        Val
+}
+
+var ErrUnknown = errors.New("unknown error")
+var ErrFieldNotExists = errors.New("field not exists")
+
+type Row map[string]interface{}
+
+func (c *Cond) Match(r map[string]interface{}) (bool, error) {
+    key := c.Identifier
+    if _, b := r[key]; !b {
+        return false, ErrFieldNotExists
+    }
+    target := r[key]
+    v := c.Value
+    op := c.Op
+    switch op {
+        case ">":
+            return v.LT(target)
+        case "<":
+            return v.GT(target)
+        case ">=":
+            return v.LTE(target)
+        case "<=":
+            return v.GTE(target)
+        case "=":
+            return v.EQ(target)
+        case "!=":
+            return v.NOTEQ(target)
+        case "in":
+            return false, ErrNotImplement
+    }
+    return false, ErrUnknown
 }
 
 func NewTql(query string) *Tql {
 	t := new(Tql)
 	t.pos = 0
 	t.query = strings.ToLower(query)
-	t.limit = -1
-	t.offset = -1
-	t.order = -1
+	t.Limit = -1
+	t.Offset = -1
+	t.Order = -1
 	if re, err := regexp.Compile(tokenize_regex); err != nil {
 		return nil
 	} else {
@@ -71,8 +92,22 @@ func NewTql(query string) *Tql {
 			return nil
 		}
 	}
-	t.__Select()
-	return t
+	if t.__Select() {
+	    return t
+    }
+    return nil
+}
+
+func (t *Tql) Match(v Row) (bool, error) {
+    b := true
+    for _, c := range t.Conds {
+        r, err := c.Match(v)
+        if err != nil {
+            return false, err
+        }
+        b = b && r
+    }
+    return b, nil
 }
 
 func (t *Tql) __Expect(expect string) {
@@ -123,19 +158,19 @@ func (t *Tql) __ExpectIdentifier() string {
 func (t *Tql) __Select() bool {
 	t.__Expect("select")
 	if !t.__Consume("*") {
-		t.props = append(t.props, t.__ExpectIdentifier())
+		t.Props = append(t.Props, t.__ExpectIdentifier())
 		for t.__Consume(",") {
-			t.props = append(t.props, t.__ExpectIdentifier())
+			t.Props = append(t.Props, t.__ExpectIdentifier())
 		}
 	} else {
-		t.props = append(t.props, "*")
+		t.Props = append(t.Props, "*")
 	}
 	return t.__From()
 }
 
 func (t *Tql) __From() bool {
 	if t.__Consume("from") {
-		t.from = t.__ExpectIdentifier()
+		t.From = t.__ExpectIdentifier()
 	} else {
 		return false
 	}
@@ -159,14 +194,14 @@ func (t *Tql) __Limit() bool {
 			return false
 		}
 		if t.__Consume(",") {
-			t.offset = n
+			t.Offset = n
 			_, limit := t.__ConsumeRegexp(num_regex)
 			n, err = strconv.ParseInt(limit, 10, 64)
 			if err != nil {
 				return false
 			}
 		}
-		t.limit = n
+		t.Limit = n
 	}
 	return t.__Offset()
 }
@@ -181,7 +216,7 @@ func (t *Tql) __Offset() bool {
 		if err != nil {
 			return false
 		}
-		t.offset = n
+		t.Offset = n
 		return true
 	}
 	return true
@@ -252,11 +287,11 @@ func (t *Tql) __ValueList() (bool, Val) {
 func (t *Tql) __orderBy() bool {
 	if t.__Consume("order") {
 		if t.__Consume("by") {
-			t.orderBy = t.__ExpectIdentifier()
+			t.OrderBy = t.__ExpectIdentifier()
 			if t.__Consume("asc") {
-				t.order = 1
+				t.Order = 1
 			} else if t.__Consume("desc") {
-				t.order = -1
+				t.Order = -1
 			}
 		} else {
 			panic("parsing order error")
@@ -283,7 +318,7 @@ func (t *Tql) __ParseFilterList() bool {
 	if !b {
 		return b
 	}
-	t.conds = append(t.conds, Cond{ident, op, val})
+	t.Conds = append(t.Conds, Cond{ident, op, val})
 	if t.__Consume("and") {
 		return t.__ParseFilterList()
 	}
